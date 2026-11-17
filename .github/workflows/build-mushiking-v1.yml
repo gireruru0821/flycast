@@ -1,0 +1,46 @@
+name: Flycast Mushiking barcode V1 (Android ARM64)
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Flycast (fork)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - name: Install NDK and CMake prerequisites
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build python3
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;29.0.14206865'
+      - name: Patch barcode input
+        run: python3 apply_patch.py .
+      - name: Configure ARM64 core
+        shell: bash
+        run: |
+          cmake -S . -B build/mushi-arm64 -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLIBRETRO=ON -DUSE_OPENMP=OFF \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/29.0.14206865/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-23 \
+            -DANDROID_STL=c++_static -DANDROID_WEAK_API_DEFS=ON
+      - name: Build Flycast core
+        run: cmake --build build/mushi-arm64 --target flycast_libretro --parallel 4
+      - name: Package custom core (do NOT overwrite standard core)
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp build/mushi-arm64/flycast_libretro.so dist/flycastmushi_libretro_android.so
+          cp flycastmushi_libretro.info dist/flycastmushi_libretro.info
+          file dist/flycastmushi_libretro_android.so
+          (cd dist && zip flycastmushi_android_arm64.zip flycastmushi_libretro_android.so flycastmushi_libretro.info)
+      - name: Upload core artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flycastmushi-android-arm64
+          path: dist/*
